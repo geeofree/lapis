@@ -1,22 +1,33 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 
-type Content = {
-  type: string;
-  children: string | string[];
+type ChildNode = {
+  type: "primitive" | "node";
+  value: string | number;
 };
 
-const content: Record<string, Content> = {
+type Nodes = {
+  type: string;
+  children: ChildNode[];
+};
+
+const DEFAULT_CONTENT: Record<string, Nodes> = {
   root: {
     type: "root",
-    children: ["foo", "bar"],
+    children: [
+      { type: "node", value: "foo" },
+      { type: "node", value: "bar" },
+    ],
   },
   foo: {
     type: "header",
-    children: "hi there baby",
+    children: [
+      { type: "primitive", value: "Woah! " },
+      { type: "primitive", value: "Hi there baby." },
+    ],
   },
   bar: {
     type: "text",
-    children: "hello daddy",
+    children: [{ type: "primitive", value: "Hey daddy." }],
   },
 };
 
@@ -26,6 +37,7 @@ type Selection = {
   parentId: string | null;
   startOffset: number | null;
   endOffset: number | null;
+  collapsed: boolean;
 };
 
 const DEFAULT_SELECTION: Selection = {
@@ -34,28 +46,32 @@ const DEFAULT_SELECTION: Selection = {
   parentId: null,
   startOffset: null,
   endOffset: null,
+  collapsed: false,
 };
 
 function App() {
+  const [content, setContent] = useState(DEFAULT_CONTENT);
   const [selection, setSelection] = useState<Selection>(DEFAULT_SELECTION);
 
   const handler = useCallback(() => {
     const selection = window.getSelection();
     if (!selection) return;
     const range = selection.getRangeAt(0);
+    console.log(selection, range);
     setSelection((prevSelection) => ({
       ...prevSelection,
-      startId: range.startContainer.parentElement?.dataset?.["rteId"] ?? null,
-      endId: range.endContainer.parentElement?.dataset?.["rteId"] ?? null,
+      startId:
+        range.startContainer.parentElement?.dataset?.["lapisRteId"] ?? null,
+      endId: range.endContainer.parentElement?.dataset?.["lapisRteId"] ?? null,
       parentId:
-        (range.commonAncestorContainer as HTMLElement).dataset?.["rteId"] ??
-        null,
+        (range.commonAncestorContainer as HTMLElement).dataset?.[
+        "lapisRteId"
+        ] ?? null,
       startOffset: range.startOffset,
       endOffset: range.endOffset - 1,
+      collapsed: range.collapsed,
     }));
   }, []);
-
-  console.log(selection);
 
   useEffect(() => {
     document.addEventListener("selectionchange", handler);
@@ -64,19 +80,63 @@ function App() {
     };
   }, []);
 
-  const renderContent = (node: Content, nodeId?: string): ReactNode => {
-    if (typeof node.children !== "string") {
-      return node.children.map((nodeId) =>
-        renderContent(content[nodeId], nodeId),
-      );
-    }
+  const renderContent = (node: Nodes, nodeId?: string): ReactNode => {
+    const commonProps = {
+      key: nodeId,
+      "data-lapis-rte-id": nodeId,
+    };
 
-    const commonProps = { key: nodeId, "data-rte-id": nodeId };
     switch (node.type) {
       case "header":
-        return <h1 {...commonProps}>{node.children}</h1>;
+        return (
+          <h1 {...commonProps}>
+            {node.children.map((childNode, i) =>
+              childNode.type === "node" ? (
+                renderContent(
+                  content[childNode.value],
+                  childNode.value as string,
+                )
+              ) : (
+                <span
+                  key={`${nodeId}.${i}`}
+                  data-lapis-rte-id={`${nodeId}.${i}`}
+                >
+                  {childNode.value}
+                </span>
+              ),
+            )}
+          </h1>
+        );
       case "text":
-        return <p {...commonProps}>{node.children}</p>;
+        return (
+          <p {...commonProps}>
+            {node.children.map((childNode, i) =>
+              childNode.type === "node" ? (
+                renderContent(
+                  content[childNode.value],
+                  childNode.value as string,
+                )
+              ) : (
+                <span
+                  key={`${nodeId}.${i}`}
+                  data-lapis-rte-id={`${nodeId}.${i}`}
+                >
+                  {childNode.value}
+                </span>
+              ),
+            )}
+          </p>
+        );
+      case "root":
+        return node.children.map((childNode, i) =>
+          childNode.type === "node" ? (
+            renderContent(content[childNode.value], childNode.value as string)
+          ) : (
+            <span key={`${nodeId}.${i}`} data-lapis-rte-id={`${nodeId}.${i}`}>
+              {childNode.value}
+            </span>
+          ),
+        );
       default:
         return null;
     }
@@ -88,7 +148,22 @@ function App() {
       tabIndex={0}
       onKeyDown={(evt) => {
         evt.preventDefault();
-        console.log("down", evt.key);
+        if (evt.key.length === 1) {
+          setContent((currentContent) => {
+            const [startId, startIdIndex] = selection.startId?.split(".") ?? [];
+            const [endId, endIdIndex] = selection.endId?.split(".") ?? [];
+
+            const startNode =
+              currentContent[startId].children[Number(startIdIndex)];
+            const endNode = currentContent[endId].children[Number(endIdIndex)];
+            /**
+             * TODO
+             * Implement the content update logic
+             **/
+            console.log(startNode, endNode, selection, evt.key);
+            return currentContent;
+          });
+        }
       }}
       onKeyUp={(evt) => {
         evt.preventDefault();
@@ -96,7 +171,7 @@ function App() {
       }}
       data-rte-id="root"
     >
-      {renderContent(content.root)}
+      {renderContent(content.root, "root")}
     </div>
   );
 }
